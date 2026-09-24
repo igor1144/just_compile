@@ -23,15 +23,13 @@ jobs:
 
     - name: Инициализация и загрузка исходников
       run: |
-        # Добавляем путь к установленному через pip бинарнику repo в системный PATH
-        export PATH="$HOME/.local/bin:$PATH"
-        
         mkdir twrp && cd twrp
         git config --global user.name "Developer"
         git config --global user.email "1144igor@gmail.com"
         
-        repo init --depth=1 -u https://github.com -b twrp-12.1
-        repo sync -c -j4 --force-sync --no-clone-bundle --no-tags
+        # Исправлено: Жесткий вызов утилиты напрямую через Python модуль
+        python3 -m repo init --depth=1 -u https://github.com -b twrp-12.1
+        python3 -m repo sync -c -j4 --force-sync --no-clone-bundle --no-tags
 
     - name: Клонирование твоего дерева устройств в исходники
       run: |
