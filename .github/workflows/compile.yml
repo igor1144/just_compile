@@ -1,7 +1,7 @@
-name: Сборка TWRP для HyperOS 2.0 (Чистый AOSP 14.1)
+name: Сборка TWRP для HyperOS 2.0 (Стабильный AOSP 12.1)
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Запуск вручную одной кнопкой
 
 jobs:
   build:
@@ -21,17 +21,20 @@ jobs:
         curl -sL https://googleapis.com > ~/bin/repo
         chmod a+x ~/bin/repo
 
-    - name: Инициализация исходников TWRP 14.1
+    - name: Инициализация исходников TWRP 12.1
       run: |
         mkdir twrp
         cd twrp
         git config --global user.name "Developer"
         git config --global user.email "1144igor@gmail.com"
-        python3 ~/bin/repo init --depth=1 -u "https://github.com" -b twrp-14.1 -m default.xml
+        
+        # Переключено на реально существующую АОСП ветку twrp-12.1
+        python3 ~/bin/repo init --depth=1 -u "https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git" -b twrp-12.1 -m default.xml
         python3 ~/bin/repo sync -c -j4 --force-sync --no-clone-bundle --no-tags --fail-fast=false
 
     - name: Клонирование твоего дерева устройств в исходники
       run: |
+        # Копируем дерево напрямую (репозиторий PUBLIC)
         mkdir -p twrp/device/xiaomi/sea
         cp -r device/xiaomi/sea/* twrp/device/xiaomi/sea/
 
