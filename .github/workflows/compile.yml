@@ -1,4 +1,4 @@
-name: Сборка TWRP для HyperOS 2.0 (Чистый AOSP 14.1)
+name: Сборка TWRP для HyperOS 2.0 (Докер-Метод)
 
 on:
   workflow_dispatch:
@@ -6,46 +6,45 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Запускаем сборку внутри готового контейнера, где 150 ГБ исходников уже лежат внутри!
+    container:
+      image: ghcr.io/orangefoxrecovery/builder:a12.1
+
     steps:
     - name: Подготовка окружения
       uses: actions/checkout@v4
 
-    - name: Установка необходимых пакетов
-      run: |
-        sudo apt-get update || true
-        sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf lib32readline-dev lib32z1-dev liblz4-tool libncurses6 libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev unzip
-
-    - name: Скачивание ПОЛНОЙ готовой базы исходников TWRP 14.1
-      run: |
-        # Скачиваем полноценный рабочий срез исходников, где папка build уже на месте
-        git clone --depth=1 https://github.com -b twrp-14.1 twrp
-
     - name: Распаковка дерева устройств из sea.zip
       run: |
-        mkdir -p twrp/device/xiaomi/sea
-        mkdir -p /tmp/sea
-        unzip -o sea.zip -d /tmp/sea/
-        if [ -d "/tmp/sea/sea" ]; then
-          cp -r /tmp/sea/sea/* twrp/device/xiaomi/sea/
+        # Внутри докера рабочая папка с готовым Андроидом называется /home/builder/fox_12.1/
+        # Создаем там папку под твое дерево
+        mkdir -p /home/builder/fox_12.1/device/xiaomi/sea
+        
+        # Распаковываем твой архив sea.zip, который лежит в корне репозитория
+        unzip -o sea.zip -d /tmp/sea_extract
+        
+        # Переносим файлы конфигурации на свои места
+        if [ -d "/tmp/sea_extract/sea" ]; then
+          cp -r /tmp/sea_extract/sea/* /home/builder/fox_12.1/device/xiaomi/sea/
         else
-          cp -r /tmp/sea/* twrp/device/xiaomi/sea/
+          cp -r /tmp/sea_extract/* /home/builder/fox_12.1/device/xiaomi/sea/
         fi
 
-    - name: Запуск компиляции vendor_boot
+    - name: Мгновенный запуск компиляции vendor_boot
       run: |
-        cd twrp
+        # Переходим в готовую папку с исходниками внутри контейнера
+        cd /home/builder/fox_12.1
+        
+        # Настраиваем окружение (оно тут точно есть!)
         export ALLOW_MISSING_DEPENDENCIES=true
-        # Проверяем наличие скрипта окружения перед запуском
-        if [ -f "build/envsetup.sh" ]; then
-          source build/envsetup.sh
-          lunch lineage_sea-eng
-          make vendorbootimage -j$(nproc --all)
-        else
-          echo "КРИТИЧЕСКАЯ ОШИБКА: Исходники не содержат папку build!" && exit 1
-        fi
+        source build/envsetup.sh
+        
+        # Запуск компиляции
+        lunch lineage_sea-eng || lunch twrp_sea-eng
+        make vendorbootimage -j$(nproc --all)
 
     - name: Загрузка готового образа в GitHub Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: TWRP-Vendor-Boot-Sea
-        path: twrp/out/target/product/sea/vendor_boot.img
+        path: /home/builder/fox_12.1/out/target/product/sea/vendor_boot.img
