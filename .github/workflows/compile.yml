@@ -1,4 +1,4 @@
-name: Сборка TWRP для HyperOS 2.0 (Бронебойный метод)
+name: Сборка TWRP для HyperOS 2.0 (Чистый Lineage 14.1)
 
 on:
   workflow_dispatch:
@@ -16,10 +16,10 @@ jobs:
         sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf lib32readline-dev lib32z1-dev liblz4-tool libncurses6 libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev unzip
 
     - name: Скачивание базы исходников TWRP (Через встроенный экшен)
-      # Используем официальный инструмент гитхаба — он загрузит код без команд git clone и без ругани на ссылки
+      # ИСПРАВЛЕНО: Указано полное правильное имя официального репозитория LineageOS-TWRP
       uses: actions/checkout@v4
       with:
-        repository: minimal-manifest-twrp/platform_manifest_twrp_lc
+        repository: minimal-manifest-twrp/platform_manifest_twrp_lineageos
         ref: twrp-14.1
         path: twrp
         path-depth: 1
