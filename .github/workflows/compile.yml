@@ -22,10 +22,10 @@ jobs:
         docker-images: true
         swap: true
 
-    - name: Установка необходимых системных пакетов
+    - name: Установка необходимых системных пакетов (Только 64-бит)
       run: |
         sudo apt-get update
-        sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git git-lfs gnupg gperf lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev openjdk-17-jdk python3 unzip
+        sudo apt-get install -y bc bison build-essential ccache curl flex git git-lfs gnupg gperf libncurses-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev openjdk-17-jdk python3 unzip
 
     - name: Установка утилиты Repo
       run: |
@@ -45,22 +45,20 @@ jobs:
         repo init -u https://github.com -b twrp-15.0
         
         # Синхронизация с жестким ограничением глубины коммитов для экономии места
-        repo sync -c -j4 --force-sync --no-clone-bundle --no-tags --depth=1
+        repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --depth=1
 
     - name: Распаковка дерева устройства из ZIP
       run: |
-        # ВНИМАНИЕ: Замените 'xiaomi' и 'ishtar' на производителя и кодовое имя ВАШЕГО устройства!
-        # Например: для Xiaomi 13 Ultra это device/xiaomi/ishtar
         VENDOR="xiaomi"
         CODENAME="sea"
         
         TARGET_DIR="twrp/device/${VENDOR}/${CODENAME}"
         mkdir -p $TARGET_DIR
         
-        # Распаковываем архив из корня репозитория (предполагается имя файла device_tree.zip)
+        # Распаковываем ваш архив sea.zip из корня репозитория
         unzip -q ./sea.zip -d $TARGET_DIR
         
-        # Проверяем структуру (если внутри архива была еще одна папка, переносим файлы в корень TARGET_DIR)
+        # Если внутри архива была еще одна папка, переносим файлы в корень TARGET_DIR
         if [ -d "$TARGET_DIR/android_device_${VENDOR}_${CODENAME}" ]; then
             mv $TARGET_DIR/android_device_${VENDOR}_${CODENAME}/* $TARGET_DIR/
             rm -rf $TARGET_DIR/android_device_${VENDOR}_${CODENAME}
@@ -71,18 +69,17 @@ jobs:
 
     - name: Запуск компиляции vendor_boot
       run: |
-        # ВНИМАНИЕ: Снова укажите кодовое имя вашего устройства вместо 'ishtar'
         CODENAME="sea"
         
         cd twrp
         export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
         
-        # Выбираем инженерную конфигурацию (чаще всего twrp_codename-eng или omni_codename-eng)
-        lunch twrp_${CODENAME}-eng || lunch twrp_${CODENAME}-eng
+        # Пытаемся запустить twrp_sea-eng, если не находит — пробуем omni_sea-eng
+        lunch twrp_${CODENAME}-eng || lunch omni_${CODENAME}-eng
         
-        # Собираем конкретно образ vendor_boot
-        make vendorbootimage -j4
+        # Собираем образ vendor_boot, используя все доступные ядра процессора
+        make vendorbootimage -j$(nproc --all)
 
     - name: Загрузка готового vendor_boot в артефакты GitHub
       uses: actions/upload-artifact@v4
