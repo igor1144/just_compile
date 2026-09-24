@@ -1,50 +1,91 @@
-name: Сборка TWRP для HyperOS 2.0 (Докер-Метод)
+name: Сборка TWRP Vendor Boot (HyperOS 2.0 / Android 15)
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Запуск вручную через вкладку Actions
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    # Запускаем сборку внутри готового контейнера, где 150 ГБ исходников уже лежат внутри!
-    container:
-      image: ghcr.io/orangefoxrecovery/builder:a12.1
 
     steps:
-    - name: Подготовка окружения
+    - name: Проверка (Checkout) текущего репозитория
       uses: actions/checkout@v4
 
-    - name: Распаковка дерева устройств из sea.zip
-      run: |
-        # Внутри докера рабочая папка с готовым Андроидом называется /home/builder/fox_12.1/
-        # Создаем там папку под твое дерево
-        mkdir -p /home/builder/fox_12.1/device/xiaomi/sea
-        
-        # Распаковываем твой архив sea.zip, который лежит в корне репозитория
-        unzip -o sea.zip -d /tmp/sea_extract
-        
-        # Переносим файлы конфигурации на свои места
-        if [ -d "/tmp/sea_extract/sea" ]; then
-          cp -r /tmp/sea_extract/sea/* /home/builder/fox_12.1/device/xiaomi/sea/
-        else
-          cp -r /tmp/sea_extract/* /home/builder/fox_12.1/device/xiaomi/sea/
-        fi
+    - name: Максимальная очистка дискового пространства
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: true
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: true
+        docker-images: true
+        swap: true
 
-    - name: Мгновенный запуск компиляции vendor_boot
+    - name: Установка необходимых системных пакетов
       run: |
-        # Переходим в готовую папку с исходниками внутри контейнера
-        cd /home/builder/fox_12.1
+        sudo apt-get update
+        sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git git-lfs gnupg gperf lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev openjdk-17-jdk python3 unzip
+
+    - name: Установка утилиты Repo
+      run: |
+        rm -rf ~/bin
+        mkdir -p ~/bin
+        curl https://googleapis.com > ~/bin/repo
+        chmod a+x ~/bin/repo
+        sudo ln -sf ~/bin/repo /usr/bin/repo
+
+    - name: Синхронизация исходников TWRP (AOSP 15)
+      run: |
+        mkdir twrp && cd twrp
+        git config --global user.name "HyperOS-Builder"
+        git config --global user.email "builder@hyperos.internal"
         
-        # Настраиваем окружение (оно тут точно есть!)
+        # Инициализация минимального манифеста под Android 15
+        repo init -u https://github.com -b twrp-15.0
+        
+        # Синхронизация с жестким ограничением глубины коммитов для экономии места
+        repo sync -c -j4 --force-sync --no-clone-bundle --no-tags --depth=1
+
+    - name: Распаковка дерева устройства из ZIP
+      run: |
+        # ВНИМАНИЕ: Замените 'xiaomi' и 'ishtar' на производителя и кодовое имя ВАШЕГО устройства!
+        # Например: для Xiaomi 13 Ultra это device/xiaomi/ishtar
+        VENDOR="xiaomi"
+        CODENAME="sea"
+        
+        TARGET_DIR="twrp/device/${VENDOR}/${CODENAME}"
+        mkdir -p $TARGET_DIR
+        
+        # Распаковываем архив из корня репозитория (предполагается имя файла device_tree.zip)
+        unzip -q ./sea.zip -d $TARGET_DIR
+        
+        # Проверяем структуру (если внутри архива была еще одна папка, переносим файлы в корень TARGET_DIR)
+        if [ -d "$TARGET_DIR/android_device_${VENDOR}_${CODENAME}" ]; then
+            mv $TARGET_DIR/android_device_${VENDOR}_${CODENAME}/* $TARGET_DIR/
+            rm -rf $TARGET_DIR/android_device_${VENDOR}_${CODENAME}
+        fi
+        
+        echo "=== Структура дерева устройства ==="
+        ls -la $TARGET_DIR
+
+    - name: Запуск компиляции vendor_boot
+      run: |
+        # ВНИМАНИЕ: Снова укажите кодовое имя вашего устройства вместо 'ishtar'
+        CODENAME="sea"
+        
+        cd twrp
         export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
         
-        # Запуск компиляции
-        lunch lineage_sea-eng || lunch twrp_sea-eng
-        make vendorbootimage -j$(nproc --all)
+        # Выбираем инженерную конфигурацию (чаще всего twrp_codename-eng или omni_codename-eng)
+        lunch twrp_${CODENAME}-eng || lunch twrp_${CODENAME}-eng
+        
+        # Собираем конкретно образ vendor_boot
+        make vendorbootimage -j4
 
-    - name: Загрузка готового образа в GitHub Artifacts
+    - name: Загрузка готового vendor_boot в артефакты GitHub
       uses: actions/upload-artifact@v4
       with:
-        name: TWRP-Vendor-Boot-Sea
-        path: /home/builder/fox_12.1/out/target/product/sea/vendor_boot.img
+        name: TWRP-Vendor-Boot-HyperOS2
+        path: twrp/out/target/product/*/*.img
