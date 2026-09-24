@@ -16,7 +16,6 @@ jobs:
         sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf lib32readline-dev lib32z1-dev liblz4-tool libncurses6 libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev unzip
 
     - name: Скачивание базы исходников TWRP (Через встроенный экшен)
-      # ИСПРАВЛЕНО: Указано полное правильное имя официального репозитория LineageOS-TWRP
       uses: actions/checkout@v4
       with:
         repository: minimal-manifest-twrp/platform_manifest_twrp_lineageos
@@ -27,8 +26,13 @@ jobs:
     - name: Распаковка дерева устройств из sea.zip
       run: |
         mkdir -p twrp/device/xiaomi/sea
-        unzip -o sea.zip -d /tmp/
-        cp -r /tmp/sea/* twrp/device/xiaomi/sea/
+        mkdir -p /tmp/sea
+        unzip -o sea.zip -d /tmp/sea/
+        if [ -d "/tmp/sea/sea" ]; then
+          cp -r /tmp/sea/sea/* twrp/device/xiaomi/sea/
+        else
+          cp -r /tmp/sea/* twrp/device/xiaomi/sea/
+        fi
 
     - name: Запуск компиляции vendor_boot
       run: |
