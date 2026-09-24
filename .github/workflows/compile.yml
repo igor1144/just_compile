@@ -1,4 +1,4 @@
-name: Сборка TWRP для HyperOS 2.0 (Прямой метод)
+name: Сборка TWRP для HyperOS 2.0 (Бронебойный метод)
 
 on:
   workflow_dispatch:
@@ -15,18 +15,19 @@ jobs:
         sudo apt-get update || true
         sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf lib32readline-dev lib32z1-dev liblz4-tool libncurses6 libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev unzip
 
-    - name: Прямое скачивание готовой базы исходников TWRP
+    - name: Скачивание базы исходников TWRP (Через встроенный экшен)
+      # Используем официальный инструмент гитхаба — он загрузит код без команд git clone и без ругани на ссылки
+      uses: actions/checkout@v4
+      with:
+        repository: minimal-manifest-twrp/platform_manifest_twrp_lc
+        ref: twrp-14.1
+        path: twrp
+        path-depth: 1
+
+    - name: Распаковка дерева устройств из sea.zip
       run: |
-        # Скачиваем чистое скомпонованное ядро сборщика TWRP 14.1/15 одной командой без утилиты repo
-        git clone --depth=1 https://github.com -b twrp-14.1 twrp
-        
-    - name: Распаковка твоего дерева устройств из sea.zip
-      run: |
-        # Готовим папки внутри скачанной базы
         mkdir -p twrp/device/xiaomi/sea
-        # Распаковываем твой архив, который лежит в корне репозитория
         unzip -o sea.zip -d /tmp/
-        # Переносим твои вылизанные Lineage-файлы на свои места
         cp -r /tmp/sea/* twrp/device/xiaomi/sea/
 
     - name: Запуск компиляции vendor_boot
