@@ -1,57 +1,68 @@
-name: Сборка TWRP для HyperOS 2.0 (Чистый AOSP 14.1)
+name: Build TWRP 14.1
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Позволяет запускать сборку вручную из вкладки Actions
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
+    permissions:
+      contents: write
+
     steps:
-    - name: Подготовка окружения
+    - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Установка необходимых пакетов для сборки Android
+    - name: Free Disk Space
       run: |
-        sudo apt-get update || true
-        sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf lib32readline-dev lib32z1-dev liblz4-tool libncurses6 libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev unzip
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf "/usr/local/share/boost"
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+        df -h
 
-    - name: Установка и настройка утилиты Repo
+    - name: Install Build Dependencies
       run: |
-        # Скачиваем оригинальный инструмент от Google напрямую
+        sudo apt-get update
+        sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python-is-python3
+
+    - name: Install Repo Tool
+      run: |
         mkdir -p ~/bin
-        curl -sL https://googleapis.com > ~/bin/repo
+        curl https://googleapis.com > ~/bin/repo
         chmod a+x ~/bin/repo
+        sudo ln -sf ~/bin/repo /usr/bin/repo
 
-    - name: Инициализация исходников TWRP 14.1
+    - name: Initialize and Sync Minimal Manifest
       run: |
-        mkdir twrp
-        cd twrp
-        git config --global user.name "Developer"
+        git config --global user.name "GitHub Actions"
         git config --global user.email "1144igor@gmail.com"
-        
-        # Жесткий вызов через python с явным указаниемdefault.xml
-        # Это исключает обрезание ссылки утилитой repo
-        python3 ~/bin/repo init --depth=1 -u "https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git" -b twrp-14.1 -m default.xml
-        
-        # Запуск скачивания (ограничено до -j4, чтобы GitHub не рвал сессию)
-        python3 ~/bin/repo sync -c -j4 --force-sync --no-clone-bundle --no-tags --fail-fast=false
+        # Инициализируем и качаем в текущую рабочую директорию
+        repo init -u https://github.com -b twrp-14.1 --depth=1
+        repo sync -c -j4 --force-sync --no-clone-bundle --no-tags
 
-    - name: Клонирование твоего дерева устройств в исходники
+    - name: Unpack Device Tree (sea.zip)
       run: |
-        mkdir -p twrp/device/xiaomi/sea
-        # Так как репозиторий PUBLIC, просто копируем файлы напрямую
-        cp -r device/xiaomi/sea/* twrp/device/xiaomi/sea/
+        if [ -f "sea.zip" ]; then
+          echo "Архив sea.zip найден, распаковка в корень исходников..."
+          unzip -o sea.zip
+          rm sea.zip
+        else
+          echo "Ошибка: Файл sea.zip не найден в корне приватного репозитория!"
+          exit 1
+        fi
 
-    - name: Запуск компиляции vendor_boot
+    - name: Build TWRP Recovery
       run: |
-        cd twrp
         export ALLOW_MISSING_DEPENDENCIES=true
-        . build/envsetup.sh
+        source build/envsetup.sh
+        # Замените 'device_name' на имя вашего устройства (каталог в device/vendor/device_name)
         lunch twrp_sea-eng
-        make vendorbootimage -j$(nproc --all)
+        mka vendorbootimage -j4
 
-    - name: Загрузка готового образа в GitHub Artifacts
-      uses: actions/upload-artifact@v4
+    - name: Upload TWRP Artifact
+      uses: actions/actions-runner-share/upload-artifact@v4
       with:
-        name: TWRP-Vendor-Boot-Sea
-        path: twrp/out/target/product/sea/vendor_boot.img
+        name: TWRP-Recovery
+        path: out/target/product/*/vendor_boot.img
