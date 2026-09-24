@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest  # Исправлено на живой современный сервер
+    runs-on: ubuntu-latest
     steps:
     - name: Подготовка окружения
       uses: actions/checkout@v4
@@ -23,11 +23,13 @@ jobs:
 
     - name: Инициализация и загрузка исходников
       run: |
+        # Добавляем путь к установленному через pip бинарнику repo в системный PATH
+        export PATH="$HOME/.local/bin:$PATH"
+        
         mkdir twrp && cd twrp
         git config --global user.name "Developer"
         git config --global user.email "1144igor@gmail.com"
         
-        # Стабильная AOSP ветка 12.1 под твое идеальное готовое дерево
         repo init --depth=1 -u https://github.com -b twrp-12.1
         repo sync -c -j4 --force-sync --no-clone-bundle --no-tags
 
