@@ -31,9 +31,17 @@ jobs:
       run: |
         rm -rf ~/bin
         mkdir -p ~/bin
-        curl https://googleapis.com > ~/bin/repo
+        # Скачиваем напрямую с официального зеркала исходного кода Google с флагом -L (следовать редиректам)
+        curl -sSL https://googleapis.com > ~/bin/repo
         chmod a+x ~/bin/repo
         sudo ln -sf ~/bin/repo /usr/bin/repo
+        
+        # Быстрая проверка: если скачался HTML вместо скрипта, качаем с проверенного зеркала на GitHub
+        if grep -q "<!DOCTYPE html>" /usr/bin/repo; then
+          echo "Предупреждение: Google отдал HTML. Переключаемся на зеркало GitHub..."
+          curl -sSL https://githubusercontent.com > ~/bin/repo
+          chmod a+x ~/bin/repo
+        fi
 
     - name: Синхронизация исходников TWRP (AOSP 15)
       run: |
