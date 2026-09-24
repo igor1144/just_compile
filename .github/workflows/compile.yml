@@ -1,16 +1,16 @@
-name: Build TWRP 14.1
+name: Build TWRP 14.1 (vendor_boot)
 
 on:
-  workflow_dispatch: # Позволяет запускать сборку вручную из вкладки Actions
+  workflow_dispatch: # Запуск вручную из вкладки Actions
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest # Теперь смело используем актуальную Ubuntu!
     permissions:
       contents: write
 
     steps:
-    - name: Checkout Repository
+    - name: Checkout Private Repository
       uses: actions/checkout@v4
 
     - name: Free Disk Space
@@ -22,10 +22,10 @@ jobs:
         sudo rm -rf "$AGENT_TOOLSDIRECTORY"
         df -h
 
-    - name: Install Build Dependencies
+    - name: Install Modern Build Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python-is-python3
+        sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3
 
     - name: Install Repo Tool
       run: |
@@ -37,10 +37,11 @@ jobs:
     - name: Initialize and Sync Minimal Manifest
       run: |
         git config --global user.name "GitHub Actions"
-        git config --global user.email "1144igor@gmail.com"
-        # Инициализируем и качаем в текущую рабочую директорию
-        repo init -u https://github.com -b twrp-14.1 --depth=1
-        repo sync -c -j4 --force-sync --no-clone-bundle --no-tags
+        git config --global user.email "actions@github.com"
+        
+        # Переключаемся на чистый AOSP манифест, ветка twrp-14.1 (Android 14)
+        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-14.1 --depth=1
+        repo sync -c -j$(nproc) --force-sync --no-clone-bundle --no-tags
 
     - name: Unpack Device Tree (sea.zip)
       run: |
@@ -49,20 +50,23 @@ jobs:
           unzip -o sea.zip
           rm sea.zip
         else
-          echo "Ошибка: Файл sea.zip не найден в корне приватного репозитория!"
+          echo "Ошибка: Файл sea.zip не найден в корне вашего репозитория!"
           exit 1
         fi
 
-    - name: Build TWRP Recovery
+    - name: Build TWRP Vendor Boot
       run: |
         export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
-        # Замените 'device_name' на имя вашего устройства (каталог в device/vendor/device_name)
-        lunch twrp_sea-eng
-        mka vendorbootimage -j4
+        
+        # ВНИМАНИЕ: Замените 'device_codename' на кодовое имя вашего устройства из sea.zip
+        lunch twrp_device_codename-eng
+        
+        # Собираем современную цель vendor_bootimage для HyperOS
+        mka vendorbootimage -j$(nproc)
 
-    - name: Upload TWRP Artifact
-      uses: actions/actions-runner-share/upload-artifact@v4
+    - name: Upload TWRP Vendor Boot Artifact
+      uses: actions/upload-artifact@v4
       with:
-        name: TWRP-Recovery
+        name: TWRP-Vendor-Boot
         path: out/target/product/*/vendor_boot.img
