@@ -1,4 +1,4 @@
-name: Сборка TWRP для HyperOS 2.0 (Чистый AOSP 12.1)
+name: Сборка TWRP для HyperOS 2.0 (Lineage 14.1 Base)
 
 on:
   workflow_dispatch:
@@ -10,33 +10,40 @@ jobs:
     - name: Подготовка окружения
       uses: actions/checkout@v4
 
-    - name: Установка необходимых пакетов и системного Repo
+    - name: Установка необходимых пакетов
       run: |
         sudo apt-get update || true
-        # Мы ставим ОФИЦИАЛЬНЫЙ системный пакет repo прямо из Ubuntu
         sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf lib32readline-dev lib32z1-dev liblz4-tool libncurses6 libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev unzip repo
 
-    - name: Инициализация и загрузка исходников
+    - name: Инициализация и загрузка исходников 14.1
       run: |
         mkdir twrp && cd twrp
         git config --global user.name "Developer"
         git config --global user.email "1144igor@gmail.com"
         
-        # Вызываем системный repo напрямую без точек и косых черт
-        repo init --depth=1 -u "https://github.com" -b twrp-12.1
+        # Стабильный рабочий манифест Lineage-TWRP 14.1 с защитой от редиректов
+        repo init --no-repo-verify --depth=1 -u "https://github.com" -b twrp-14.1 -m default.xml
         repo sync -c -j4 --force-sync --no-clone-bundle --no-tags --fail-fast=false
 
-    - name: Клонирование твоего дерева устройств в исходники
+    - name: Распаковка дерева устройств из ZIP-архива
       run: |
+        # Очищаем пути и подготавливаем целевую папку
+        rm -rf twrp/device/xiaomi/sea
         mkdir -p twrp/device/xiaomi/sea
-        cp -r device/xiaomi/sea/* twrp/device/xiaomi/sea/
+        
+        # Распаковываем sea.zip, который лежит в корне твоего репозитория, во временную папку
+        unzip -o sea.zip -d /tmp/
+        
+        # Переносим всё содержимое распакованной папки sea в исходники
+        cp -r /tmp/sea/* twrp/device/xiaomi/sea/
 
     - name: Запуск компиляции vendor_boot
       run: |
         cd twrp
         export ALLOW_MISSING_DEPENDENCIES=true
         . build/envsetup.sh
-        lunch twrp_sea-eng
+        # Lunch адаптирован под новые сборочные правила LineageOS префиксов
+        lunch lineage_sea-eng
         make vendorbootimage -j$(nproc --all)
 
     - name: Загрузка готового образа в GitHub Artifacts
