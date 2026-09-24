@@ -1,7 +1,7 @@
-name: Сборка TWRP Vendor Boot (HyperOS 2.0 / Android 15)
+name: Сборка TWRP Vendor Boot Ramdisk (HyperOS 2.0)
 
 on:
-  workflow_dispatch: # Запуск вручную через вкладку Actions
+  workflow_dispatch:
 
 jobs:
   build:
@@ -11,49 +11,28 @@ jobs:
     - name: Проверка (Checkout) текущего репозитория
       uses: actions/checkout@v4
 
-    - name: Максимальная очистка дискового пространства
-      uses: jlumbroso/free-disk-space@main
-      with:
-        tool-cache: true
-        android: true
-        dotnet: true
-        haskell: true
-        large-packages: true
-        docker-images: true
-        swap: true
+    - name: Принудительное исправление DNS (на случай сбоев GitHub)
+      run: |
+        sudo rm -f /etc/resolv.conf
+        echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf
+        echo "nameserver 1.1.1.1" | sudo tee -a /etc/resolv.conf
 
-    - name: Установка необходимых системных пакетов (Только 64-бит)
+    - name: Установка минимальных пакетов (Только 64-бит)
       run: |
         sudo apt-get update
         sudo apt-get install -y bc bison build-essential ccache curl flex git git-lfs gnupg gperf libncurses-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev openjdk-17-jdk python3 unzip
 
-    - name: Установка утилиты Repo
-      run: |
-        rm -rf ~/bin
-        mkdir -p ~/bin
-        # Скачиваем напрямую с официального зеркала исходного кода Google с флагом -L (следовать редиректам)
-        curl -sSL https://googleapis.com > ~/bin/repo
-        chmod a+x ~/bin/repo
-        sudo ln -sf ~/bin/repo /usr/bin/repo
-        
-        # Быстрая проверка: если скачался HTML вместо скрипта, качаем с проверенного зеркала на GitHub
-        if grep -q "<!DOCTYPE html>" /usr/bin/repo; then
-          echo "Предупреждение: Google отдал HTML. Переключаемся на зеркало GitHub..."
-          curl -sSL https://githubusercontent.com > ~/bin/repo
-          chmod a+x ~/bin/repo
-        fi
-
-    - name: Синхронизация исходников TWRP (AOSP 15)
+    - name: Клонирование структуры сборщика вместо тяжелого Repo Sync
       run: |
         mkdir twrp && cd twrp
-        git config --global user.name "HyperOS-Builder"
-        git config --global user.email "builder@hyperos.internal"
+        # Скачиваем только ядро системы сборки Android 15 (минимально необходимый набор для работы компилятора)
+        git clone https://github.com -b twrp-15.0 build/make --depth=1
         
-        # Инициализация минимального манифеста под Android 15
-        repo init -u https://github.com -b twrp-15.0
+        # Скачиваем сам исходный код TWRP под Android 15
+        git clone https://github.com -b android-15.0 bootable/recovery --depth=1
         
-        # Синхронизация с жестким ограничением глубины коммитов для экономии места
-        repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --depth=1
+        # Скачиваем базовые инструменты конфигурации
+        git clone https://github.com -b twrp-15.0 build/soong --depth=1
 
     - name: Распаковка дерева устройства из ZIP
       run: |
@@ -63,34 +42,34 @@ jobs:
         TARGET_DIR="twrp/device/${VENDOR}/${CODENAME}"
         mkdir -p $TARGET_DIR
         
-        # Распаковываем ваш архив sea.zip из корня репозитория
+        # Распаковываем ваш архив sea.zip из корня
         unzip -q ./sea.zip -d $TARGET_DIR
         
-        # Если внутри архива была еще одна папка, переносим файлы в корень TARGET_DIR
+        # Если внутри архива файлы лежали в подпапке, переносим их в корень TARGET_DIR
         if [ -d "$TARGET_DIR/android_device_${VENDOR}_${CODENAME}" ]; then
             mv $TARGET_DIR/android_device_${VENDOR}_${CODENAME}/* $TARGET_DIR/
             rm -rf $TARGET_DIR/android_device_${VENDOR}_${CODENAME}
         fi
         
-        echo "=== Структура дерева устройства ==="
+        echo "=== Проверка наличия дерева ==="
         ls -la $TARGET_DIR
 
-    - name: Запуск компиляции vendor_boot
+    - name: Запуск компиляции vendor_boot ramdisk
       run: |
         CODENAME="sea"
-        
         cd twrp
+        
         export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
         
-        # Пытаемся запустить twrp_sea-eng, если не находит — пробуем omni_sea-eng
+        # Определяем конфигурацию дерева
         lunch twrp_${CODENAME}-eng || lunch omni_${CODENAME}-eng
         
-        # Собираем образ vendor_boot, используя все доступные ядра процессора
+        # Компилируем ramdisk и упаковываем в итоговый vendor_boot.img
         make vendorbootimage -j$(nproc --all)
 
     - name: Загрузка готового vendor_boot в артефакты GitHub
       uses: actions/upload-artifact@v4
       with:
-        name: TWRP-Vendor-Boot-HyperOS2
+        name: TWRP-Vendor-Boot-Sea
         path: twrp/out/target/product/*/*.img
