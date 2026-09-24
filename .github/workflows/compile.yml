@@ -1,7 +1,7 @@
 name: Сборка TWRP для HyperOS 2.0 (Чистый AOSP 14.1)
 
 on:
-  workflow_dispatch: # Позволяет запускать сборку вручную кнопкой из браузера
+  workflow_dispatch:
 
 jobs:
   build:
@@ -18,7 +18,6 @@ jobs:
     - name: Установка и настройка утилиты Repo
       run: |
         mkdir -p ~/bin
-        # ПОЛНАЯ ССЫЛКА: скачивает бинарный скрипт, а не страницу поисковика
         curl -sL https://googleapis.com > ~/bin/repo
         chmod a+x ~/bin/repo
 
@@ -28,16 +27,11 @@ jobs:
         cd twrp
         git config --global user.name "Developer"
         git config --global user.email "1144igor@gmail.com"
-        
-        # ПОЛНАЯ ССЫЛКА: указывает точный репозиторий AOSP-манифеста
         python3 ~/bin/repo init --depth=1 -u "https://github.com" -b twrp-14.1 -m default.xml
-        
-        # Скачивание исходников
         python3 ~/bin/repo sync -c -j4 --force-sync --no-clone-bundle --no-tags --fail-fast=false
 
     - name: Клонирование твоего дерева устройств в исходники
       run: |
-        # Копируем дерево из твоего PUBLIC репозитория
         mkdir -p twrp/device/xiaomi/sea
         cp -r device/xiaomi/sea/* twrp/device/xiaomi/sea/
 
@@ -47,7 +41,7 @@ jobs:
         export ALLOW_MISSING_DEPENDENCIES=true
         . build/envsetup.sh
         lunch twrp_sea-eng
-        make vendorbootimage -j4
+        make vendorbootimage -j$(nproc --all)
 
     - name: Загрузка готового образа в GitHub Artifacts
       uses: actions/upload-artifact@v4
