@@ -1,72 +1,55 @@
-name: Build TWRP 14.1 (vendor_boot)
+name: Сборка TWRP для HyperOS 2.0 (Чистый AOSP 14.1)
 
 on:
-  workflow_dispatch: # Запуск вручную из вкладки Actions
+  workflow_dispatch: # Позволяет запускать сборку вручную кнопкой из браузера
 
 jobs:
   build:
-    runs-on: ubuntu-latest # Теперь смело используем актуальную Ubuntu!
-    permissions:
-      contents: write
-
+    runs-on: ubuntu-latest
     steps:
-    - name: Checkout Private Repository
+    - name: Подготовка окружения
       uses: actions/checkout@v4
 
-    - name: Free Disk Space
+    - name: Установка необходимых пакетов для сборки Android
       run: |
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /usr/local/lib/android
-        sudo rm -rf /opt/ghc
-        sudo rm -rf "/usr/local/share/boost"
-        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-        df -h
+        sudo apt-get update || true
+        sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf lib32readline-dev lib32z1-dev liblz4-tool libncurses6 libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev unzip
 
-    - name: Install Modern Build Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3
-
-    - name: Install Repo Tool
+    - name: Установка и настройка утилиты Repo
       run: |
         mkdir -p ~/bin
-        curl https://googleapis.com > ~/bin/repo
+        curl -sL https://googleapis.com > ~/bin/repo
         chmod a+x ~/bin/repo
-        sudo ln -sf ~/bin/repo /usr/bin/repo
 
-    - name: Initialize and Sync Minimal Manifest
+    - name: Инициализация исходников TWRP 14.1
       run: |
-        git config --global user.name "GitHub Actions"
-        git config --global user.email "actions@github.com"
+        mkdir twrp
+        cd twrp
+        git config --global user.name "Developer"
+        git config --global user.email "1144igor@gmail.com"
         
-        # Переключаемся на чистый AOSP манифест, ветка twrp-14.1 (Android 14)
-        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-14.1 --depth=1
-        repo sync -c -j$(nproc) --force-sync --no-clone-bundle --no-tags
+        # Запуск через python3 исключает обрезание строки и скачивание HTML-грязи
+        python3 ~/bin/repo init --depth=1 -u "https://github.com" -b twrp-14.1 -m default.xml
+        
+        # Скачивание исходников (потоки ограничены до -j4, чтобы сервер не рвал сессию)
+        python3 ~/bin/repo sync -c -j4 --force-sync --no-clone-bundle --no-tags --fail-fast=false
 
-    - name: Unpack Device Tree (sea.zip)
+    - name: Клонирование твоего дерева устройств в исходники
       run: |
-        if [ -f "sea.zip" ]; then
-          echo "Архив sea.zip найден, распаковка в корень исходников..."
-          unzip -o sea.zip
-          rm sea.zip
-        else
-          echo "Ошибка: Файл sea.zip не найден в корне вашего репозитория!"
-          exit 1
-        fi
+        # Создаем целевую папку. Никаких rm -rf, так как репозиторий PUBLIC
+        mkdir -p twrp/device/xiaomi/sea
+        cp -r device/xiaomi/sea/* twrp/device/xiaomi/sea/
 
-    - name: Build TWRP Vendor Boot
+    - name: Запуск компиляции vendor_boot
       run: |
+        cd twrp
         export ALLOW_MISSING_DEPENDENCIES=true
-        source build/envsetup.sh
-        
-        # ВНИМАНИЕ: Замените 'device_codename' на кодовое имя вашего устройства из sea.zip
-        lunch twrp_device_codename-eng
-        
-        # Собираем современную цель vendor_bootimage для HyperOS
-        mka vendorbootimage -j$(nproc)
+        . build/envsetup.sh
+        lunch twrp_sea-eng
+        make vendorbootimage -j$(nproc --all)
 
-    - name: Upload TWRP Vendor Boot Artifact
+    - name: Загрузка готового образа в GitHub Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: TWRP-Vendor-Boot
-        path: out/target/product/*/vendor_boot.img
+        name: TWRP-Vendor-Boot-Sea
+        path: twrp/out/target/product/sea/vendor_boot.img
