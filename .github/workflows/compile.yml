@@ -1,4 +1,4 @@
-name: Сборка TWRP для HyperOS 2.0 (Чистый Lineage 14.1)
+name: Сборка TWRP для HyperOS 2.0 (Чистый AOSP 14.1)
 
 on:
   workflow_dispatch:
@@ -15,13 +15,10 @@ jobs:
         sudo apt-get update || true
         sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf lib32readline-dev lib32z1-dev liblz4-tool libncurses6 libncurses-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev unzip
 
-    - name: Скачивание базы исходников TWRP (Через встроенный экшен)
-      uses: actions/checkout@v4
-      with:
-        repository: minimal-manifest-twrp/platform_manifest_twrp_lineageos
-        ref: twrp-14.1
-        path: twrp
-        path-depth: 1
+    - name: Скачивание ПОЛНОЙ готовой базы исходников TWRP 14.1
+      run: |
+        # Скачиваем полноценный рабочий срез исходников, где папка build уже на месте
+        git clone --depth=1 https://github.com -b twrp-14.1 twrp
 
     - name: Распаковка дерева устройств из sea.zip
       run: |
@@ -38,9 +35,14 @@ jobs:
       run: |
         cd twrp
         export ALLOW_MISSING_DEPENDENCIES=true
-        . build/envsetup.sh
-        lunch lineage_sea-eng
-        make vendorbootimage -j$(nproc --all)
+        # Проверяем наличие скрипта окружения перед запуском
+        if [ -f "build/envsetup.sh" ]; then
+          source build/envsetup.sh
+          lunch lineage_sea-eng
+          make vendorbootimage -j$(nproc --all)
+        else
+          echo "КРИТИЧЕСКАЯ ОШИБКА: Исходники не содержат папку build!" && exit 1
+        fi
 
     - name: Загрузка готового образа в GitHub Artifacts
       uses: actions/upload-artifact@v4
