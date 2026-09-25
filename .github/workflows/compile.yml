@@ -1,11 +1,11 @@
 name: Build TWRP for HyperOS 2.0 (Android 14)
 
 on:
-  workflow_dispatch: # Позволяет запускать сборку вручную кнопкой в веб-интерфейсе GitHub
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04 # Используем стабильную версию Ubuntu на сервере
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout Workflow Code (Скачиваем ваш репозиторий с sea.zip)
@@ -25,51 +25,32 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev unzip python3
 
-      - name: Install Repo Tool (Надежная установка без HTML ошибок)
+      - name: Clean and Reset Git Environment
         run: |
-          sudo apt-get update
-          sudo apt-get install -y repo
-          repo --version
-
-      - name: Hard Reset Git and Repo Configs (Уничтожаем засевший баг с URL)
-        run: |
-          # Полностью стираем глобальный конфигурационный файл Git сервера, где застрял битый URL
           rm -f ~/.gitconfig
           rm -rf ~/.repoconfig
           rm -rf twrp
-          
-          # Заново создаем чистый глобальный конфиг без старого мусора
           git config --global user.name "TWRP Builder"
           git config --global user.email "twrp@build.local"
-          git config --global http.postBuffer 1048576000
-          git config --global http.maxRequestSize 1048576000
-          
-          # На всякий случай проверяем, пуст ли список правил insteadOf
-          git config --global --list
 
-      - name: Repo Init and Sync (Скачивание манифеста TWRP 14)
+      - name: Manual Clone TWRP Manifest (Обход утилиты repo)
         run: |
           mkdir twrp
           cd twrp
+          # Скачиваем базовую структуру сборщика напрямую через Git
+          git clone --depth=1 https://github.com -b twrp-14.1 .repo/manifests
           
-          # Отключаем автоапдейт repo, чтобы не лезли системные варнинги
-          export REPO_SKIP_AUTO_UPDATE=1
+          # Копируем файлы конфигурации сборки в корень рабочей папки
+          cp -r .repo/manifests/* . || true
           
-          # Инициализируем репозиторий со строгим указанием правильного URL
-          repo init -u "https://github.com" -b twrp-14.1 --depth=1 --no-clone-bundle
-          
-          # Синхронизируем код в 4 потока. Если упадет по сети — само переключится на 1 поток
-          repo sync -c -j4 --fail-fast --no-clone-bundle --no-tags --force-sync || repo sync -c -j1 --fail-fast --no-clone-bundle --no-tags --force-sync
+          # Скачиваем ключевую утилиту сборки Android (build/make) напрямую
+          git clone --depth=1 https://github.com -b twrp-14.1 build/make
+          ln -s build/make/envsetup.sh build/envsetup.sh || cp build/make/envsetup.sh build/envsetup.sh
 
       - name: Unpack Device Tree (Распаковка вашего дерева sea.zip)
         run: |
-          # Создаем целевую структуру папок для Xiaomi (устройство sea)
           mkdir -p twrp/device/xiaomi/sea
-          
-          # Распаковываем ваш архив sea.zip, который лежит в корне репозитория
           unzip sea.zip -d twrp/device/xiaomi/sea
-          
-          # Выводим структуру папок в лог, чтобы проверить правильность распаковки
           echo "=== Проверка содержимого распакованного дерева ==="
           ls -la twrp/device/xiaomi/sea
 
@@ -79,10 +60,10 @@ jobs:
           export ALLOW_MISSING_DEPENDENCIES=true
           source build/envsetup.sh
           
-          # Пробуем разные варианты названий конфигураций (twrp_sea, lineage_sea, omni_sea)
+          # Пробуем запустить конфигурацию устройства
           lunch twrp_sea-eng || lunch lineage_sea-eng || lunch omni_sea-eng
           
-          # Сборка образа vendor_boot для девайсов на HyperOS 2.0 / Android 14
+          # Сборка образа vendor_boot
           mka vendorbootimage -j$(nproc)
 
       - name: Upload TWRP Artifact
