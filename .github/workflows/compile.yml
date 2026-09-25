@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04 # Используем свежую версию Ubuntu на сервере
+    runs-on: ubuntu-24.04 # Используем стабильную версию Ubuntu на сервере
 
     steps:
       - name: Checkout Workflow Code (Скачиваем ваш репозиторий с sea.zip)
@@ -23,14 +23,13 @@ jobs:
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev unzip
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev unzip python3
 
-      - name: Install Repo Tool (Исправленный правильный URL)
+      - name: Install Repo Tool (Надежная установка без HTML ошибок)
         run: |
-          mkdir -p ~/bin
-          curl https://googleapis.com > ~/bin/repo
-          chmod a+x ~/bin/repo
-          sudo ln -sf ~/bin/repo /usr/bin/repo
+          sudo apt-get update
+          sudo apt-get install -y repo
+          repo --version
 
       - name: Set Git Config
         run: |
@@ -39,26 +38,26 @@ jobs:
           git config --global http.postBuffer 1048576000
           git config --global http.maxRequestSize 1048576000
 
-      - name: Repo Init and Sync (Исправленный манифест TWRP)
+      - name: Repo Init and Sync (Скачивание манифеста TWRP 14)
         run: |
           mkdir twrp
           cd twrp
-          # Инициализируем чистый манифест Minimal TWRP для Android 14
+          # Инициализируем чистый репозиторий Minimal TWRP для Android 14
           repo init -u https://github.com -b twrp-14.1 --depth=1
           
-          # Ограничиваем количество потоков до 4, чтобы избежать банов и HTML-файлов
+          # Синхронизируем код в 4 потока для стабильности сети
           repo sync -c -j4 --fail-fast --no-clone-bundle --no-tags
 
       - name: Unpack Device Tree (Распаковка вашего дерева sea.zip)
         run: |
-          # Создаем структуру папок для Xiaomi (устройство sea)
+          # Создаем целевую структуру папок для Xiaomi (устройство sea)
           mkdir -p twrp/device/xiaomi/sea
           
-          # Распаковываем ваш архив прямо в созданную папку исходников
+          # Распаковываем ваш архив sea.zip, который лежит в корне репозитория
           unzip sea.zip -d twrp/device/xiaomi/sea
           
-          # Проверяем, что файлы распаковались куда нужно (для логов сборки)
-          echo "Содержимое папки дерева устройства:"
+          # Выводим структуру папок в лог, чтобы проверить правильность распаковки
+          echo "=== Проверка содержимого распакованного дерева ==="
           ls -la twrp/device/xiaomi/sea
 
       - name: Build TWRP Recovery (Xiaomi Sea)
@@ -67,10 +66,10 @@ jobs:
           export ALLOW_MISSING_DEPENDENCIES=true
           source build/envsetup.sh
           
-          # Выбираем конфигурацию сборки (обычно twrp_sea-eng или lineage_sea-eng в зависимости от названий файлов в вашем zip)
-          lunch twrp_sea-eng || lunch lineage_sea-eng
+          # Пробуем разные варианты названий конфигураций (twrp_sea, lineage_sea, omni_sea)
+          lunch twrp_sea-eng || lunch lineage_sea-eng || lunch omni_sea-eng
           
-          # Запуск сборки vendor_boot для HyperOS 2.0 / Android 14
+          # Сборка образа vendor_boot для девайсов на HyperOS 2.0 / Android 14
           mka vendorbootimage -j$(nproc)
 
       - name: Upload TWRP Artifact
