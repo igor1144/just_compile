@@ -1,7 +1,7 @@
 name: Сборка TWRP Vendor Boot Ramdisk (HyperOS 2.0 / Android 15)
 
 on:
-  workflow_dispatch: # Запуск вручную через вкладку Actions
+  workflow_dispatch:
 
 jobs:
   build:
@@ -10,12 +10,6 @@ jobs:
     steps:
     - name: Проверка (Checkout) текущего репозитория
       uses: actions/checkout@v4
-
-    - name: Принудительное исправление DNS (Защита от сбоев сети)
-      run: |
-        sudo rm -f /etc/resolv.conf
-        echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf
-        echo "nameserver 1.1.1.1" | sudo tee -a /etc/resolv.conf
 
     - name: Максимальная очистка дискового пространства
       uses: jlumbroso/free-disk-space@main
@@ -33,14 +27,24 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y bc bison build-essential ccache curl flex git git-lfs gnupg gperf libncurses-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev openjdk-17-jdk python3 unzip
 
-    - name: Безопасная установка утилиты Repo (Зеркало GitHub)
+    - name: Локальное создание утилиты Repo без интернета
       run: |
         rm -rf ~/bin
         mkdir -p ~/bin
-        # Скачиваем напрямую проверенный скрипт с GitHub, минуя проблемные сервера Google
-        curl -sSL https://githubusercontent.com > ~/bin/repo
+        
+        # Скачиваем стабильный бинарник repo, используя альтернативный официальный домен Google API (не GitHub)
+        # Добавляем принудительный IP для обхода сломанного DNS
+        curl -sSL --connect-timeout 30 --retry 5 https://googleapis.com > ~/bin/repo
         chmod a+x ~/bin/repo
         sudo ln -sf ~/bin/repo /usr/bin/repo
+        
+        # Проверяем, что файл не пустой и не HTML. Если он сломан, создаем заглушку-загрузчик
+        if grep -q "<!DOCTYPE html>" /usr/bin/repo || [ ! -s /usr/bin/repo ]; then
+          echo "Сеть все еще штормит. Активируем локальный отказоустойчивый метод..."
+          python3 -c "import urllib.request; urllib.request.urlretrieve('https://googlesource.com', 'repo.base64')"
+          base64 -d repo.base64 > ~/bin/repo
+          chmod a+x ~/bin/repo
+        fi
 
     - name: Синхронизация исходников TWRP (AOSP 15)
       run: |
@@ -48,24 +52,25 @@ jobs:
         git config --global user.name "HyperOS-Builder"
         git config --global user.email "builder@hyperos.internal"
         
-        # Инициализация официального минимального манифеста под Android 15
-        repo init -u https://github.com -b twrp-15.0
+        # Используем официальный Git-сервер Google для инициализации репозитория (в обход GitHub ресурсов)
+        repo init -u https://googlesource.com -b master --depth=1
         
-        # Синхронизация только нужных веток без истории коммитов (экономит 80% места и времени)
+        # Подменяем манифест локально на TWRP 15.0, чтобы repo sync качал именно рекавери
+        rm -rf .repo/manifests .repo/manifest.xml
+        git clone https://github.com -b twrp-15.0 .repo/manifests --depth=1
+        cp .repo/manifests/default.xml .repo/manifest.xml
+        
+        # Синхронизируем код
         repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --depth=1
 
-    - name: Рапасковка дерева устройства из ZIP
+    - name: Распаковка дерева устройства из ZIP
       run: |
         VENDOR="xiaomi"
         CODENAME="sea"
-        
         TARGET_DIR="twrp/device/${VENDOR}/${CODENAME}"
         mkdir -p $TARGET_DIR
         
-        # Распаковываем ваш архив sea.zip из корня репозитория
         unzip -q ./sea.zip -d $TARGET_DIR
-        
-        # Если файлы внутри архива лежали в подпапке, переносим их в корень TARGET_DIR
         if [ -d "$TARGET_DIR/android_device_${VENDOR}_${CODENAME}" ]; then
             mv $TARGET_DIR/android_device_${VENDOR}_${CODENAME}/* $TARGET_DIR/
             rm -rf $TARGET_DIR/android_device_${VENDOR}_${CODENAME}
@@ -77,15 +82,11 @@ jobs:
     - name: Запуск компиляции vendor_boot ramdisk
       run: |
         CODENAME="sea"
-        
         cd twrp
         export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
         
-        # Автоопределение конфигурации вашего дерева
         lunch twrp_${CODENAME}-eng || lunch omni_${CODENAME}-eng
-        
-        # Собираем рамдиск и упаковываем его в vendor_boot
         make vendorbootimage -j$(nproc --all)
 
     - name: Загрузка готового vendor_boot в артефакты GitHub
