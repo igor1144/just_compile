@@ -31,30 +31,34 @@ jobs:
           sudo apt-get install -y repo
           repo --version
 
-      - name: Set Git Config
+      - name: Hard Reset Git and Repo Configs (Уничтожаем засевший баг с URL)
         run: |
+          # Полностью стираем глобальный конфигурационный файл Git сервера, где застрял битый URL
+          rm -f ~/.gitconfig
+          rm -rf ~/.repoconfig
+          rm -rf twrp
+          
+          # Заново создаем чистый глобальный конфиг без старого мусора
           git config --global user.name "TWRP Builder"
           git config --global user.email "twrp@build.local"
           git config --global http.postBuffer 1048576000
           git config --global http.maxRequestSize 1048576000
-
-      - name: Repo Init and Sync (Полная зачистка старого кэша гитхаба)
-        run: |
-          # Жёстко удаляем старые папки и конфиги, которые ломали сборку
-          rm -rf twrp
-          rm -rf ~/.repoconfig
-          rm -rf ~/.gitconfig.lock
           
+          # На всякий случай проверяем, пуст ли список правил insteadOf
+          git config --global --list
+
+      - name: Repo Init and Sync (Скачивание манифеста TWRP 14)
+        run: |
           mkdir twrp
           cd twrp
           
-          # Отключаем автоапдейт repo
+          # Отключаем автоапдейт repo, чтобы не лезли системные варнинги
           export REPO_SKIP_AUTO_UPDATE=1
           
-          # Инициализируем СТРОГО правильный URL манифеста TWRP
-          repo init -u https://github.com -b twrp-14.1 --depth=1 --no-clone-bundle
+          # Инициализируем репозиторий со строгим указанием правильного URL
+          repo init -u "https://github.com" -b twrp-14.1 --depth=1 --no-clone-bundle
           
-          # Синхронизируем код в 4 потока. Если упадет по сети — само переключится ниже
+          # Синхронизируем код в 4 потока. Если упадет по сети — само переключится на 1 поток
           repo sync -c -j4 --fail-fast --no-clone-bundle --no-tags --force-sync || repo sync -c -j1 --fail-fast --no-clone-bundle --no-tags --force-sync
 
       - name: Unpack Device Tree (Распаковка вашего дерева sea.zip)
