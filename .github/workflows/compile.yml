@@ -38,19 +38,24 @@ jobs:
           git config --global http.postBuffer 1048576000
           git config --global http.maxRequestSize 1048576000
 
-      - name: Repo Init and Sync (Защита от варнингов и обрывов сети)
+      - name: Repo Init and Sync (Полная зачистка старого кэша гитхаба)
         run: |
+          # Жёстко удаляем старые папки и конфиги, которые ломали сборку
+          rm -rf twrp
+          rm -rf ~/.repoconfig
+          rm -rf ~/.gitconfig.lock
+          
           mkdir twrp
           cd twrp
           
-          # Отключаем автоапдейт repo, чтобы убрать варнинг про "The launcher is not writable"
+          # Отключаем автоапдейт repo
           export REPO_SKIP_AUTO_UPDATE=1
           
-          # Инициализируем чистый репозиторий Minimal TWRP для Android 14
+          # Инициализируем СТРОГО правильный URL манифеста TWRP
           repo init -u https://github.com -b twrp-14.1 --depth=1 --no-clone-bundle
           
-          # Синхронизируем код. Если 4 потока падают, ставим -j1 для максимальной стабильности
-          repo sync -c -j1 --fail-fast --no-clone-bundle --no-tags --force-sync
+          # Синхронизируем код в 4 потока. Если упадет по сети — само переключится ниже
+          repo sync -c -j4 --fail-fast --no-clone-bundle --no-tags --force-sync || repo sync -c -j1 --fail-fast --no-clone-bundle --no-tags --force-sync
 
       - name: Unpack Device Tree (Распаковка вашего дерева sea.zip)
         run: |
