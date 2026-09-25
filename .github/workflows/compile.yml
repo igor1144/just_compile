@@ -29,7 +29,6 @@ jobs:
 
     - name: Создание оригинального Repo через Python (В обход curl)
       run: |
-        rm -rf ~/bin
         mkdir -p ~/bin
         
         # Скачиваем чистый исходный код repo из стабильного Gerrit-репозитория Google
