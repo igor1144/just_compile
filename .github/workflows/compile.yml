@@ -1,90 +1,82 @@
-name: Сборка TWRP Vendor Boot Ramdisk (HyperOS 2.0 / Android 15)
+name: Build TWRP for HyperOS 2.0 (Android 14)
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Позволяет запускать сборку вручную кнопкой в веб-интерфейсе GitHub
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Используем свежую версию Ubuntu на сервере
 
     steps:
-    - name: Проверка (Checkout) текущего репозитория
-      uses: actions/checkout@v4
+      - name: Checkout Workflow Code (Скачиваем ваш репозиторий с sea.zip)
+        uses: actions/checkout@v4
 
-    - name: Максимальная очистка дискового пространства
-      uses: jlumbroso/free-disk-space@main
-      with:
-        tool-cache: true
-        android: true
-        dotnet: true
-        haskell: true
-        large-packages: true
-        docker-images: true
-        swap: true
+      - name: Free Disk Space (Очистка места под исходники)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
 
-    - name: Установка необходимых системных пакетов (Только 64-бит)
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y bc bison build-essential ccache curl flex git git-lfs gnupg gperf libncurses-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev openjdk-17-jdk python3 unzip
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev unzip
 
-    - name: Создание фейковой заглушки Repo (Чтобы обмануть систему сборки)
-      run: |
-        rm -rf ~/bin && mkdir -p ~/bin
-        # Создаем пустой скрипт, который просто возвращает "ОК" при вызове из build/envsetup.sh
-        echo -e '#!/bin/bash\necho "Fake Repo OK"\nexit 0' > ~/bin/repo
-        chmod a+x ~/bin/repo
-        sudo ln -sf ~/bin/repo /usr/bin/repo
+      - name: Install Repo Tool (Исправленный правильный URL)
+        run: |
+          mkdir -p ~/bin
+          curl https://googleapis.com > ~/bin/repo
+          chmod a+x ~/bin/repo
+          sudo ln -sf ~/bin/repo /usr/bin/repo
 
-    - name: Сборка структуры папок напрямую через Git Clone
-      run: |
-        mkdir twrp && cd twrp
-        git config --global user.name "HyperOS-Builder"
-        git config --global user.email "builder@hyperos.internal"
-        
-        # Скачиваем ТОЛЬКО компоненты компилятора Android 15 (без истории коммитов)
-        git clone https://github.com -b twrp-15.0 build/make --depth=1
-        git clone https://github.com -b android-15.0 bootable/recovery --depth=1
-        git clone https://github.com -b twrp-15.0 build/soong --depth=1
-        
-        # Имитируем наличие метаданных манифеста, чтобы скрипты Android не улетали в ошибку 128
-        mkdir -p .repo/manifests
-        echo '<?xml version="1.0" encoding="UTF-8"?><manifest><remote name="github" fetch="https://github.com/"/><default revision="twrp-15.0" remote="github"/><project path="build/make" name="minimal-manifest-twrp/platform_build_make"/></manifest>' > .repo/manifest.xml
+      - name: Set Git Config
+        run: |
+          git config --global user.name "TWRP Builder"
+          git config --global user.email "twrp@build.local"
+          git config --global http.postBuffer 1048576000
+          git config --global http.maxRequestSize 1048576000
 
-    - name: Распаковка дерева устройства из ZIP
-      run: |
-        VENDOR="xiaomi"
-        CODENAME="sea"
-        TARGET_DIR="twrp/device/${VENDOR}/${CODENAME}"
-        mkdir -p $TARGET_DIR
-        
-        unzip -q ./sea.zip -d $TARGET_DIR
-        if [ -d "$TARGET_DIR/android_device_${VENDOR}_${CODENAME}" ]; then
-            mv $TARGET_DIR/android_device_${VENDOR}_${CODENAME}/* $TARGET_DIR/
-            rm -rf $TARGET_DIR/android_device_${VENDOR}_${CODENAME}
-        fi
-        
-        echo "=== Структура дерева устройства ==="
-        ls -la $TARGET_DIR
+      - name: Repo Init and Sync (Исправленный манифест TWRP)
+        run: |
+          mkdir twrp
+          cd twrp
+          # Инициализируем чистый манифест Minimal TWRP для Android 14
+          repo init -u https://github.com -b twrp-14.1 --depth=1
+          
+          # Ограничиваем количество потоков до 4, чтобы избежать банов и HTML-файлов
+          repo sync -c -j4 --fail-fast --no-clone-bundle --no-tags
 
-    - name: Запуск компиляции vendor_boot ramdisk
-      run: |
-        CODENAME="sea"
-        cd twrp
-        
-        # Разрешаем сборку без полной синхронизации системы
-        export ALLOW_MISSING_DEPENDENCIES=true
-        export WITHOUT_CHECK_API=true
-        
-        source build/envsetup.sh
-        
-        # Применяем конфигурацию дерева
-        lunch twrp_${CODENAME}-eng || lunch omni_${CODENAME}-eng
-        
-        # Собираем рамдиск рекавери и запаковываем его в vendor_boot.img
-        make vendorbootimage -j$(nproc --all)
+      - name: Unpack Device Tree (Распаковка вашего дерева sea.zip)
+        run: |
+          # Создаем структуру папок для Xiaomi (устройство sea)
+          mkdir -p twrp/device/xiaomi/sea
+          
+          # Распаковываем ваш архив прямо в созданную папку исходников
+          unzip sea.zip -d twrp/device/xiaomi/sea
+          
+          # Проверяем, что файлы распаковались куда нужно (для логов сборки)
+          echo "Содержимое папки дерева устройства:"
+          ls -la twrp/device/xiaomi/sea
 
-    - name: Загрузка готового vendor_boot в артефакты GitHub
-      uses: actions/upload-artifact@v4
-      with:
-        name: TWRP-Vendor-Boot-Sea
-        path: twrp/out/target/product/*/*.img
+      - name: Build TWRP Recovery (Xiaomi Sea)
+        run: |
+          cd twrp
+          export ALLOW_MISSING_DEPENDENCIES=true
+          source build/envsetup.sh
+          
+          # Выбираем конфигурацию сборки (обычно twrp_sea-eng или lineage_sea-eng в зависимости от названий файлов в вашем zip)
+          lunch twrp_sea-eng || lunch lineage_sea-eng
+          
+          # Запуск сборки vendor_boot для HyperOS 2.0 / Android 14
+          mka vendorbootimage -j$(nproc)
+
+      - name: Upload TWRP Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TWRP-Xiaomi-Sea-VendorBoot
+          path: |
+            twrp/out/target/product/sea/vendor_boot.img
+            twrp/out/target/product/sea/*.zip
