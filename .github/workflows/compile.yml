@@ -8,15 +8,14 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      # ШАГ 1: МЫ НЕ ИСПОЛЬЗУЕМ checkout. Сервер абсолютно чист от старых конфигов гитхаба.
       - name: System Cleanup and Isolation
         run: |
-          # Уничтожаем любые возможные глобальные настройки Git, которые могли урезать URL
+          # Уничтожаем любые глобальные настройки Git
           sudo rm -f ~/.gitconfig
           sudo rm -f /etc/gitconfig
           rm -rf *
           
-          # Задаем чистые, стандартные настройки для Git
+          # Задаем чистые настройки
           git config --global user.name "TWRP Builder"
           git config --global user.email "twrp@build.local"
 
@@ -25,15 +24,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev unzip python3 repo
 
-      - name: Download Sea.zip Direct From GitHub API
+      - name: Download Sea.zip Direct From GitHub API (Исправлено)
         run: |
-          # Скачиваем ваш sea.zip напрямую через API GitHub, обходя стандартный сломанный механизм Git
-          # Скрипт берет архив из корня репозитория, в котором запущен этот workflow
+          # Скачиваем sea.zip через прямую и чистую ссылку API
           curl -L -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -o sea.zip \
             "https://githubusercontent.com{{ github.repository }}/${{ github.ref_name }}/sea.zip"
           
-          # Проверяем, что файл скачался и это архив, а не HTML
+          # Проверяем, что файл успешно скачался
           ls -la sea.zip
           file sea.zip
 
@@ -41,7 +39,7 @@ jobs:
         run: |
           mkdir twrp
           cd twrp
-          # Теперь чистый Git без скрытых настроек скачает манифест
+          # Чистый Git скачивает минимальный манифест
           git clone --depth=1 https://github.com -b twrp-14.1 .repo/manifests
           cp -r .repo/manifests/* . || true
           
